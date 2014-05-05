@@ -10,9 +10,7 @@ import Data.List (intercalate)
 
 
 main :: IO()
-main = do
-    args <- getArgs
-    putStrLn (readExpr (args !! 0))
+main = getArgs >>= print .eval . readExpr . head
 
 data LispVal = Atom String
               | List [LispVal]
@@ -54,10 +52,10 @@ symbol = oneOf "!$%&|*+-/:<=>?@^_~"
 spaces :: Parser ()
 spaces = skipMany1 space
 
-readExpr :: String -> String
+readExpr :: String -> LispVal
 readExpr input = case parse parseExpr "lisp" input of
-    Left err -> "No match: " ++ show err
-    Right val -> "Found value: " ++ show val
+    Left err -> String $ "No match: " ++ show err
+    Right val -> val --"Found value: " ++ show val
     
 parseExpr :: Parser LispVal
 parseExpr = parseAtom 
@@ -181,7 +179,7 @@ parseBinary = do
 -- binary parser helper
 -- needs to sum powers of 2 for each position in string that has a '1'
 binaryStr2Int :: String -> Integer
-binaryStr2Int s = sum $ map (\(i,n) -> i*(2^n)) $ zip [0..] $ map convert (reverse s)
+binaryStr2Int s = sum $ map (\(n,i) -> i*(2^n)) $ zip [0..] $ map convert (reverse s)
         where convert '0' = 0
               convert '1' = 1
 
@@ -239,3 +237,72 @@ parseVector = do
     arrayValues <- sepBy parseExpr spaces
     -- listArray creates an Array from a tuple of bounds and a list of values
     return $ Vector (listArray (0, (length arrayValues) - 1) arrayValues)
+
+
+
+
+
+
+-- EVALUATION --
+
+
+eval :: LispVal -> LispVal
+eval val@(String _) = val
+eval val@(Number _) = val
+eval val@(Bool _) = val
+eval (List [Atom "quote", val]) = val
+eval (List (Atom func : args)) = apply func $ map eval args
+
+
+apply :: String -> [LispVal] -> LispVal
+apply func args = maybe (Bool False) ($ args) $ lookup func primitives
+
+primitives :: [(String, [LispVal] -> LispVal)]
+primitives = [("+", numericBinop (+)),
+              ("-", numericBinop (-)),
+              ("*", numericBinop (*)),
+              ("/", numericBinop div),
+              ("mod", numericBinop mod),
+              ("quotient", numericBinop quot),
+              ("remainder", numericBinop rem),
+              ("symbol?", unaryOp symbolp),
+              ("string?", unaryOp stringp),
+              ("number?", unaryOp numberp),
+              ("bool?", unaryOp boolp),
+              ("list?", unaryOp listp),
+              ("symbol->string", unaryOp symbol2string),
+              ("string->symbol", unaryOp string2symbol)
+              ]
+              
+
+numericBinop :: (Integer -> Integer -> Integer) -> [LispVal] -> LispVal
+numericBinop oper params = Number $ foldl1 oper $ map unpackNum params
+
+unaryOp :: (LispVal -> LispVal) -> [LispVal] -> LispVal
+unaryOp f [v] = f v
+
+unpackNum :: LispVal -> Integer
+unpackNum (Number n) = n
+unpackNum _ = 0
+
+symbolp, numberp, stringp, boolp, listp :: LispVal -> LispVal
+symbolp (Atom _)   = Bool True
+symbolp _          = Bool False
+numberp (Number _) = Bool True
+numberp _          = Bool False
+stringp (String _) = Bool True
+stringp _          = Bool False
+boolp   (Bool _)   = Bool True
+boolp   _          = Bool False
+listp   (List _)   = Bool True
+listp   (DottedList _ _) = Bool True
+listp   _          = Bool False
+
+symbol2string, string2symbol :: LispVal -> LispVal
+symbol2string (Atom s)   = String s
+symbol2string _          = String ""
+string2symbol (String s) = Atom s
+string2symbol _          = Atom ""
+
+
+
