@@ -5,6 +5,7 @@ import Text.ParserCombinators.Parsec hiding (spaces)
 import Numeric (readOct, readHex, readFloat)
 import Data.Ratio
 import Data.Complex
+import Data.Array
 
 
 main :: IO()
@@ -22,6 +23,7 @@ data LispVal = Atom String
               | String String
               | Character Char
               | Bool Bool
+              | Vector (Array Int LispVal)
     
 --instance Show LispVal where
 --    show val = case val of
@@ -52,6 +54,20 @@ parseExpr = parseAtom
         <|> try parseNumber
         <|> try parseBool
         <|> try parseCharacter
+        <|> try (do 
+                    _ <- string "#("
+                    x <- parseVector
+                    _ <- char ')'
+                    return x)
+        <|> parseQuoted
+        <|> parseQuasiQuoted
+        <|> parseUnQuote
+        <|> do 
+            _ <- char '('
+            x <- (try parseList <|> parseDottedList)
+            _ <- char ')'
+            return x
+            
         
               
 parseString :: Parser LispVal
@@ -176,3 +192,36 @@ parseHex = do
 readReadSWith :: (String -> [(a, String)]) -> String -> a
 readReadSWith funct str = fst $ (funct str) !! 0
 
+
+parseList :: Parser LispVal
+parseList = sepBy parseExpr spaces >>= return . List
+
+parseDottedList :: Parser LispVal
+parseDottedList = do
+    headList <- endBy parseExpr spaces
+    tailItem <- char '.' >> spaces >> parseExpr
+    return $ DottedList headList tailItem
+
+parseQuoted :: Parser LispVal
+parseQuoted = do
+    _ <- char '\''
+    x <- parseExpr
+    return $ List [Atom "quote", x]
+    
+parseQuasiQuoted :: Parser LispVal
+parseQuasiQuoted = do
+    _ <- char '`'
+    x <- parseExpr
+    return $ List [Atom "quasiquote", x]
+     
+parseUnQuote :: Parser LispVal
+parseUnQuote = do
+    _ <- char ','
+    x <- parseExpr
+    return $ List [Atom "unquote", x]
+
+parseVector :: Parser LispVal
+parseVector = do 
+    arrayValues <- sepBy parseExpr spaces
+    -- listArray creates an Array from a tuple of bounds and a list of values
+    return $ Vector (listArray (0, (length arrayValues) - 1) arrayValues)
