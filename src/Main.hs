@@ -2,7 +2,10 @@ module Main where
 
 import System.Environment
 import Text.ParserCombinators.Parsec hiding (spaces)
-import Numeric (readOct, readHex)
+import Numeric (readOct, readHex, readFloat)
+import Data.Ratio
+import Data.Complex
+
 
 main :: IO()
 main = do
@@ -13,7 +16,11 @@ data LispVal = Atom String
               | List [LispVal]
               | DottedList [LispVal] LispVal
               | Number Integer
+              | Float Double
+              | Complex (Complex Double)
+              | Ratio Rational
               | String String
+              | Character Char
               | Bool Bool
     
 --instance Show LispVal where
@@ -39,9 +46,13 @@ readExpr input = case parse parseExpr "lisp" input of
 parseExpr :: Parser LispVal
 parseExpr = parseAtom 
         <|> parseString
-        <|> parseNumber
-        <|> parseBool
-    
+        <|> try parseRatio
+        <|> try parseComplex
+        <|> try parseFloat
+        <|> try parseNumber
+        <|> try parseBool
+        <|> try parseCharacter
+        
               
 parseString :: Parser LispVal
 parseString = do
@@ -68,12 +79,47 @@ parseAtom = do
     rest <- many (letter <|> digit <|> symbol)
     let atom = first:rest
     return $ Atom atom
+    
+parseCharacter :: Parser LispVal
+parseCharacter = do
+    _ <- string "#\\"
+    s <- many1 letter
+    return $ Character $ case s of
+        "space" -> ' '
+        "newline" -> '\n'
+        [_] -> s !! 0
 
 parseBool :: Parser LispVal
 parseBool = do
     _ <- char '#'
     (char 't' >> return (Bool True))
     <|> (char 'f' >> return (Bool False))
+
+parseFloat :: Parser LispVal
+parseFloat = do
+    x <- many1 digit
+    dot <- char '.'
+    y <- many1 digit
+    (return . Float . (readReadSWith readFloat)) (x ++ [dot] ++ y)
+    
+parseRatio :: Parser LispVal
+parseRatio = do 
+    numer <- many1 digit
+    _ <- char '/'
+    denom <- many1 digit
+    -- '%' is a constructor for the Rational Type
+    return $ Ratio ((read numer) % (read denom))
+    
+parseComplex :: Parser LispVal
+parseComplex = do 
+            real <- fmap toDouble (try parseFloat <|> parseDefaultDec)
+            _ <- char '+'
+            img <- fmap toDouble (try parseFloat <|> parseDefaultDec)
+            _ <- char 'i'
+            -- ":+" creates a Complex Type
+            return $ Complex (real :+ img)
+        where toDouble (Float x) = x
+              toDouble (Number x) = fromIntegral x
 
 parseNumber :: Parser LispVal
 parseNumber = parseDefaultDec <|> parseRadixDelimitedNum
