@@ -54,6 +54,7 @@ escapedChars :: Parser Char
 escapedChars = do
     _ <- char '\\'
     c <- oneOf ['\\', '"', 'n', 'r', 't']
+    -- This is actually exhaustive because the list is right above... sorry compiler
     return $ case c of 
         '\\' -> c
         '"'  -> c
@@ -85,7 +86,7 @@ parseDefaultDec = many1 digit >>= return . Number . read
 parseRadixDelimitedNum :: Parser LispVal
 parseRadixDelimitedNum =
     char '#'
-    >> (parseDec)
+    >> (parseDec <|> parseBinary <|> parseOctal <|> parseHex)
 
 -- Parse decimal numbers: beginning with "#d"
 parseDec :: Parser LispVal
@@ -95,11 +96,18 @@ parseDec = do
     (return . Number . read ) num
 
 -- Parse binary numbers: beginning with "#b"
+parseBinary :: Parser LispVal
+parseBinary = do
+    _ <- char 'b'
+    num <- many $ oneOf "01"
+    (return . Number . binaryStr2Int) num
 
 -- binary parser helper
 -- needs to sum powers of 2 for each position in string that has a '1'
 binaryStr2Int :: String -> Integer
-binaryStr2Int s = 0
+binaryStr2Int s = sum $ map (\(i,n) -> i*(2^n)) $ zip [0..] $ map convert (reverse s)
+        where convert '0' = 0
+              convert '1' = 1
 
 -- Parse octal numbers: beginning with "#o"
 parseOctal :: Parser LispVal
