@@ -6,6 +6,7 @@ import Numeric (readOct, readHex, readFloat)
 import Data.Ratio
 import Data.Complex
 import Data.Array
+import Data.List (intercalate)
 
 
 main :: IO()
@@ -25,14 +26,27 @@ data LispVal = Atom String
               | Bool Bool
               | Vector (Array Int LispVal)
     
---instance Show LispVal where
---    show val = case val of
---        (Atom a) -> a
-----        (List xs) -> unwords . map show xs
-----        (DottedList init last) -> init ++ "." ++ show last
---        (String s) -> s
---        (Number n) -> show n
+instance Show LispVal where show = showVal
         
+showVal :: LispVal -> String
+showVal (Atom name) = name
+showVal (List vals) = "(" ++ unwordsList vals ++ ")"
+showVal (DottedList initList lastItem) = "(" ++ unwordsList initList ++ " . " ++ showVal lastItem ++ ")"
+showVal (Number num) = show num
+showVal (Float num) = show num ++ "f"
+showVal (Complex complex) = (show (realPart complex)) ++ " + " ++ (show (imagPart complex)) ++ "i"
+showVal (Ratio ratio) = show ratio
+showVal (String str) = "\"" ++ str ++ "\""
+showVal (Character c) = show c
+showVal (Bool True) = "#t"
+showVal (Bool False) = "#f" 
+showVal (Vector arr) = "[" ++ showArray arr ++ "]"
+
+unwordsList :: [LispVal] -> String
+unwordsList = unwords . map showVal
+
+showArray :: Array Int LispVal -> String
+showArray arr = intercalate ", " $ map showVal $ elems arr 
     
 symbol :: Parser Char
 symbol = oneOf "!$%&|*+-/:<=>?@^_~"
@@ -43,7 +57,7 @@ spaces = skipMany1 space
 readExpr :: String -> String
 readExpr input = case parse parseExpr "lisp" input of
     Left err -> "No match: " ++ show err
-    Right val -> "Found value: " -- ++ show val
+    Right val -> "Found value: " ++ show val
     
 parseExpr :: Parser LispVal
 parseExpr = parseAtom 
