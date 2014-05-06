@@ -16,6 +16,7 @@ data LispVal = Atom String
               | Character Char
               | Bool Bool
               | Vector (Array Int LispVal)
+              deriving (Eq)
     
 instance Show LispVal where show = showVal
         

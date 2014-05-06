@@ -1,8 +1,9 @@
+{-# LANGUAGE ExistentialQuantification, DoAndIfThenElse #-}
 module Evaluation where
 
-import LispValData
-import LispErrorData
-import Control.Monad.Error
+import           Control.Monad.Error
+import           LispErrorData
+import           LispValData
 
 
 eval :: LispVal -> ThrowsError LispVal
@@ -10,19 +11,41 @@ eval val@(String _) = return val
 eval val@(Number _) = return val
 eval val@(Bool _) = return val
 eval (List [Atom "quote", val]) = return val
-eval (List [Atom "if", predicate, consequent, alternate]) = 
-    do 
+eval (List [Atom "if", predicate, consequent, alternate]) =
+    do
         result <- eval predicate
-        case result of 
+        case result of
           Bool False -> eval alternate
           Bool True -> eval consequent
           _ -> throwError $ TypeMismatch "non boolean in \'if\' construct" predicate
-eval (List (Atom func : args)) = mapM eval args >>= apply func 
+eval form@(List (Atom "cond" : clauses)) =
+    if null clauses
+    then throwError $ BadSpecialForm "no true clause in cond expression: " form
+    else case head clauses of
+        List [Atom "else", expr] -> eval expr
+        List [test, expr]        -> eval $ List [Atom "if",
+                                                 test,
+                                                 expr,
+                                                 List (Atom "cond" : tail clauses)]
+        _ -> throwError $ BadSpecialForm "ill-formed cond expression: "form
+eval form@(List (Atom "case" : key : clauses)) =
+    if null clauses
+    then throwError $ BadSpecialForm "no true clause in case expression: " form
+    else case head clauses of
+        List (Atom "else" : exprs) -> mapM eval exprs >>= return . last
+        List ((List datums) : exprs) -> do
+            result <- eval key
+            equality <- mapM (\x -> eqv [result, x]) datums
+            if (Bool True) `elem` equality
+            then mapM eval exprs >>= return . last
+            else eval $ List (Atom "case" : key : tail clauses)
+        _ -> throwError $ BadSpecialForm "ill-formed case expression: " form
+eval (List (Atom func : args)) = mapM eval args >>= apply func
 eval badForm = throwError $ BadSpecialForm "Unrecognized special form" badForm
 
 
 apply :: String -> [LispVal] -> ThrowsError LispVal
-apply func args = maybe (throwError $ NotFunction "Unrecognized primitive function args" func) 
+apply func args = maybe (throwError $ NotFunction "Unrecognized primitive function args" func)
                         ($ args)
                         (lookup func primitives)
 
@@ -39,8 +62,8 @@ primitives = [("+", numericBinop (+)),
               ("number?", unaryOp numberp),
               ("bool?", unaryOp boolp),
               ("list?", unaryOp listp),
-              ("symbol->string", unaryOp symbol2string),
-              ("string->symbol", unaryOp string2symbol),
+              ("symbol->string", symbol2string),
+              ("string->symbol", string2symbol),
               ("=", numBoolBinop (==)),
               ("<", numBoolBinop (<)),
               (">", numBoolBinop (>)),
@@ -58,9 +81,10 @@ primitives = [("+", numericBinop (+)),
               ("cdr", cdr),
               ("cons", cons),
               ("eq?", eqv),
-              ("eqv?", eqv)
+              ("eqv?", eqv),
+              ("equal?", equal)
               ]
-              
+
 
 numericBinop :: (Integer -> Integer -> Integer) -> [LispVal] -> ThrowsError LispVal
 numericBinop _   []      = throwError $ NumArgs 2 []
@@ -84,11 +108,13 @@ listp   (List _)   = Bool True
 listp   (DottedList _ _) = Bool True
 listp   _          = Bool False
 
-symbol2string, string2symbol :: LispVal -> LispVal
-symbol2string (Atom s)   = String s
-symbol2string _          = String ""
-string2symbol (String s) = Atom s
-string2symbol _          = Atom ""
+symbol2string, string2symbol :: [LispVal] -> ThrowsError LispVal
+symbol2string []           = throwError $ NumArgs 1 []
+symbol2string [(Atom s)]   = return $ String s
+symbol2string [notAtom]    = throwError $ TypeMismatch "atom" notAtom
+string2symbol []           = throwError $ NumArgs 1 []
+string2symbol [(String s)] = return $ Atom s
+string2symbol [notString]  = throwError $ TypeMismatch "string" notString
 
 
 car :: [LispVal] -> ThrowsError LispVal
@@ -111,25 +137,41 @@ cons [x, DottedList xs xlast] = return $ DottedList (x : xs) xlast
 cons [x1, x2] = return $ DottedList [x1] x2
 cons badArgList = throwError $ NumArgs 2 badArgList
 
+
+
 eqv :: [LispVal] -> ThrowsError LispVal
 eqv [(Bool arg1), (Bool arg2)] = return $ Bool $ arg1 == arg2
 eqv [(Number arg1), (Number arg2)] = return $ Bool $ arg1 == arg2
 eqv [(String arg1), (String arg2)] = return $ Bool $ arg1 == arg2
 eqv [(Atom arg1), (Atom arg2)] = return $ Bool $ arg1 == arg2
 eqv [(DottedList xs x), (DottedList ys y)] = eqv [List $ xs ++ [x], List $ ys ++ [y]]
-eqv [(List arg1), (List arg2)] = return $ Bool $ (length arg1 == length arg2) && 
-                                                    (all eqvPair $ zip arg1 arg2)
-    where eqvPair (x1, x2) = case eqv [x1, x2] of
-                               Left err -> False
-                               Right (Bool val) -> val
+eqv [l1@(List _), l2@(List _)] = eqvList eqv [l1, l2]
 eqv [_, _] = return $ Bool False
 eqv badArgList = throwError $ NumArgs 2 badArgList
+
+equal :: [LispVal] -> ThrowsError LispVal
+equal [l1@(List _), l2@(List _)] = eqvList equal [l1, l2]
+equal [(DottedList xs x), (DottedList ys y)] = equal [List $ xs ++ [x], List $ ys ++ [y]]
+equal [arg1, arg2] = do
+    primitiveEquals <- liftM or $ mapM (unpackEquals arg1 arg2)
+                      [AnyUnpacker unpackNum, AnyUnpacker unpackStr, AnyUnpacker unpackBool]
+    eqvEquals <- eqv [arg1, arg2]
+    return $ Bool $ (primitiveEquals || let (Bool x) = eqvEquals in x)
+equal badArgList = throwError $ NumArgs 2 badArgList
+
+eqvList :: ([LispVal] -> ThrowsError LispVal) -> [LispVal] -> ThrowsError LispVal
+eqvList eqvFunc [(List arg1), (List arg2)] =
+    return $ Bool $ (length arg1 == length arg2) && (all eqvPair $ zip arg1 arg2)
+    where eqvPair (x1, x2) = case eqvFunc [x1, x2] of
+                               Left err -> False
+                               Right (Bool val) -> val
+
 
 
 boolBinop :: (LispVal -> ThrowsError a) -> (a -> a -> Bool) -> [LispVal] -> ThrowsError LispVal
 boolBinop unpacker oper args = if length args /= 2
                                then throwError $ NumArgs 2 args
-                               else do 
+                               else do
                                     left <- unpacker $ args !! 0
                                     right <- unpacker $ args !! 1
                                     return $ Bool $ left `oper` right
@@ -142,6 +184,9 @@ boolBoolBinop = boolBinop unpackBool
 
 strBoolBinop :: (String -> String -> Bool) -> [LispVal] -> ThrowsError LispVal
 strBoolBinop = boolBinop unpackStr
+
+
+
 
 unpackNum :: LispVal -> ThrowsError Integer
 unpackNum (Number n) = return n
@@ -157,3 +202,13 @@ unpackStr (Number n) = return $ show n
 unpackStr (Bool b) = return $ show b
 unpackStr notString = throwError $ TypeMismatch "string" notString
 
+
+data Unpacker = forall a. Eq a => AnyUnpacker (LispVal -> ThrowsError a)
+
+unpackEquals :: LispVal -> LispVal -> Unpacker -> ThrowsError Bool
+unpackEquals arg1 arg2 (AnyUnpacker unpacker) =
+    do
+        unpacked1 <- unpacker arg1
+        unpacked2 <- unpacker arg2
+        return $ unpacked1 == unpacked2
+    `catchError` (const $ return False)
