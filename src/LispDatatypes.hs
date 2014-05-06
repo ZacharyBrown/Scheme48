@@ -10,6 +10,7 @@ import Text.ParserCombinators.Parsec hiding (spaces)
 
 -- imports for Environment
 import Data.IORef
+import System.IO (Handle)
 
 data LispVal = Atom String
               | List [LispVal]
@@ -25,7 +26,8 @@ data LispVal = Atom String
               | PrimitiveFunc ([LispVal] -> ThrowsError LispVal)
               | Func {params :: [String], vararg :: (Maybe String),
                        body :: [LispVal], closure :: Env}
-              
+              | IOFunc ([LispVal] -> IOThrowsError LispVal)
+              | Port Handle
     
 instance Show LispVal where show = showVal
         
@@ -48,6 +50,8 @@ showVal (Func {params = args, vararg = varargs, body = body, closure = env}) =
         (case varargs of 
             Nothing -> ""
             Just arg -> " . " ++ arg) ++ ") ...)"
+showVal (IOFunc _) = "<IO primitive>"
+showVal (Port _) = "<IO port>"
 
 unwordsList :: [LispVal] -> String
 unwordsList = unwords . map showVal
