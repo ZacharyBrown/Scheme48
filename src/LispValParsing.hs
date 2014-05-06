@@ -87,8 +87,13 @@ parseCharacter = do
 parseBool :: Parser LispVal
 parseBool = do
     _ <- char '#'
-    (char 't' >> return (Bool True))
-    <|> (char 'f' >> return (Bool False))
+    b <- oneOf "tf"
+    return $ case b of 
+        't' -> Bool True
+        'f' -> Bool False
+        
+--        (char 't' >> return (Bool True))
+--    <|> (char 'f' >> return (Bool False))
 
 parseFloat :: Parser LispVal
 parseFloat = do
