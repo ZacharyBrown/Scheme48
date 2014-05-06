@@ -1,11 +1,8 @@
-{-# LANGUAGE ExistentialQuantification, DoAndIfThenElse #-}
+{-# LANGUAGE ExistentialQuantification, DoAndIfThenElse, KindSignatures #-}
 module Evaluation where
 
 import Control.Monad.Error
-import LispErrorData
-import LispValData
-import Environment
-
+import LispDatatypes
 
 eval :: Env -> LispVal -> IOThrowsError LispVal
 eval env val@(String _) = return val
@@ -24,6 +21,16 @@ eval env (List [Atom "set!", Atom var, form]) =
     eval env form >>= setVar env var
 eval env (List [Atom "define", Atom var, form]) =
     eval env form >>= defineVar env var
+eval env (List (Atom "define" : List (Atom var : params) : body)) =
+    makeNormalFunc env params body >>= defineVar env var
+eval env (List (Atom "define" : DottedList (Atom var : params) varargs : body)) =
+    makeVarargs varargs env params body >>= defineVar env var
+eval env (List (Atom "lambda" : List params : body)) =
+    makeNormalFunc env params body
+eval env (List (Atom "lambda" : DottedList params varargs : body)) =
+    makeVarargs varargs env params body
+eval env (List (Atom "lambda" : varargs@(Atom _) : body)) =
+    makeVarargs varargs env [] body
 eval env form@(List (Atom "cond" : clauses)) =
     if null clauses
     then throwError $ BadSpecialForm "no true clause in cond expression: " form
@@ -34,26 +41,50 @@ eval env form@(List (Atom "cond" : clauses)) =
                                                  expr,
                                                  List (Atom "cond" : tail clauses)]
         _ -> throwError $ BadSpecialForm "ill-formed cond expression: "form
-eval env form@(List (Atom "case" : key : clauses)) =
-    if null clauses
-    then throwError $ BadSpecialForm "no true clause in case expression: " form
-    else case head clauses of
-        List (Atom "else" : exprs) -> mapM (eval env) exprs >>= return . last
-        List ((List datums) : exprs) -> do
-            result <- eval env key
-            equality <- mapM (liftThrows . (\x -> eqv [result, x])) datums
-            if (Bool True) `elem` equality
-            then mapM (eval env) exprs >>= return . last
-            else eval env $ List (Atom "case" : key : tail clauses)
-        _ -> throwError $ BadSpecialForm "ill-formed case expression: " form
-eval env (List (Atom func : args)) = mapM (eval env) args >>= liftThrows . apply func
+
+-- Cannot do 'case' construct this way without deriving Eq... which causes troubles        
+--eval env form@(List (Atom "case" : key : clauses)) =
+--    if null clauses
+--    then throwError $ BadSpecialForm "no true clause in case expression: " form
+--    else case head clauses of
+--        List (Atom "else" : exprs) -> mapM (eval env) exprs >>= return . last
+--        List ((List datums) : exprs) -> do
+--            result <- eval env key
+--            equality <- mapM (liftThrows . (\x -> eqv [result, x])) datums
+--            if (Bool True) `elem` equality
+--            then mapM (eval env) exprs >>= return . last
+--            else eval env $ List (Atom "case" : key : tail clauses)
+--        _ -> throwError $ BadSpecialForm "ill-formed case expression: " form
+
+eval env (List (function : args)) = do 
+    func <- eval env function
+    argVals <- mapM (eval env) args
+    apply func argVals
 eval env badForm = throwError $ BadSpecialForm "Unrecognized special form" badForm
 
 
-apply :: String -> [LispVal] -> ThrowsError LispVal
-apply func args = maybe (throwError $ NotFunction "Unrecognized primitive function args" func)
-                        ($ args)
-                        (lookup func primitives)
+makeFunc :: Maybe String -> Env -> [LispVal] -> [LispVal] -> IOThrowsError LispVal
+makeFunc varargs env params body = return $ Func (map showVal params) varargs body env
+
+makeNormalFunc :: Env -> [LispVal] -> [LispVal] -> IOThrowsError LispVal
+makeNormalFunc = makeFunc Nothing
+
+makeVarargs :: LispVal -> Env -> [LispVal] -> [LispVal] -> IOThrowsError LispVal
+makeVarargs = makeFunc . Just . showVal
+
+
+apply :: LispVal -> [LispVal] -> IOThrowsError LispVal
+apply (PrimitiveFunc func) args = liftThrows $ func args
+apply (Func params varargs body closure) args = 
+    if (num params /= num args) && (varargs == Nothing)
+        then throwError $ NumArgs (num params) args
+        else (liftIO $ bindVars closure $ zip params args) >>= bindVarArgs varargs >>= evalBody
+    where remainingArgs = drop (length params) args
+          num = toInteger . length
+          evalBody env = liftM last $ mapM (eval env) body
+          bindVarArgs arg env = case arg of
+              Just argName -> liftIO $ bindVars env [(argName, List $ remainingArgs)]
+              Nothing -> return env
 
 primitives :: [(String, [LispVal] -> ThrowsError LispVal)]
 primitives = [("+", numericBinop (+)),
@@ -91,6 +122,10 @@ primitives = [("+", numericBinop (+)),
               ("equal?", equal)
               ]
 
+
+primitiveBindings :: IO Env
+primitiveBindings = nullEnv >>= (flip bindVars $ map makePrimitiveFunc primitives)
+    where makePrimitiveFunc (var, func) = (var, PrimitiveFunc func)
 
 numericBinop :: (Integer -> Integer -> Integer) -> [LispVal] -> ThrowsError LispVal
 numericBinop _   []      = throwError $ NumArgs 2 []

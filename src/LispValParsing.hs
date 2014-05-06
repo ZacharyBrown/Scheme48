@@ -1,7 +1,6 @@
 module LispValParsing where
 
-import LispValData
-import LispErrorData
+import LispDatatypes
 
 import Numeric (readOct, readHex, readFloat)
 import Data.Ratio
