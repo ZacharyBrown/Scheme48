@@ -120,6 +120,7 @@ primitives = [("+", numericBinop (+)),
               ("string>?", strBoolBinop (>)),
               ("string<=?", strBoolBinop (<=)),
               ("string>=?", strBoolBinop (>=)),
+              ("string-append", stringAppend),
               ("car", car),
               ("cdr", cdr),
               ("cons", cons),
@@ -185,6 +186,15 @@ cons [x, DottedList xs xlast] = return $ DottedList (x : xs) xlast
 cons [x1, x2] = return $ DottedList [x1] x2
 cons badArgList = throwError $ NumArgs 2 badArgList
 
+stringAppend :: [LispVal] -> ThrowsError LispVal
+stringAppend [(String s)] = return $ String s  --Base case
+stringAppend (String st:sts) = do
+    rest <- stringAppend sts
+    case rest of
+        String s -> return $ String $ st ++ s
+        other -> throwError $ TypeMismatch "string" other
+stringAppend [badType] = throwError $ TypeMismatch "string" badType
+stringAppend badArgList = throwError $ NumArgs 1 badArgList
 
 
 eqv :: [LispVal] -> ThrowsError LispVal
