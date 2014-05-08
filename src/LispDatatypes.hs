@@ -13,6 +13,7 @@ import Data.IORef
 import System.IO (Handle)
 
 data LispVal = Atom String
+              | Nil
               | List [LispVal]
               | DottedList [LispVal] LispVal
               | Number Integer
@@ -33,6 +34,9 @@ instance Show LispVal where show = showVal
         
 showVal :: LispVal -> String
 showVal (Atom name) = name
+showVal Nil = "" 
+showVal (List [] ) = ""
+showVal (List (Nil:xs)) = showVal $ List xs
 showVal (List vals) = "(" ++ unwordsList vals ++ ")"
 showVal (DottedList initList lastItem) = "(" ++ unwordsList initList ++ " . " ++ showVal lastItem ++ ")"
 showVal (Number num) = show num
@@ -54,7 +58,7 @@ showVal (IOFunc _) = "<IO primitive>"
 showVal (Port _) = "<IO port>"
 
 unwordsList :: [LispVal] -> String
-unwordsList = unwords . map showVal
+unwordsList xs = unwords . map showVal $ xs
 
 showArray :: Array Int LispVal -> String
 showArray arr = intercalate ", " $ map showVal $ elems arr 

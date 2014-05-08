@@ -7,6 +7,7 @@ import LispDatatypes
 import LispValParsing
 
 eval :: Env -> LispVal -> IOThrowsError LispVal
+eval env val@Nil = return val
 eval env val@(String _) = return val
 eval env val@(Number _) = return val
 eval env val@(Bool _) = return val
@@ -282,6 +283,8 @@ ioPrimitives = [("apply", applyProc),
                 ("close-output-port", closePort),
                 ("read", readProc),
                 ("write", writeProc),
+                ("display", displayProc),
+                ("display-ln", displayLnProc),
                 ("read-contents", readContents),
                 ("read-all", readAll)]
 
@@ -303,7 +306,13 @@ readProc [Port port] = (liftIO $ hGetLine port) >>= liftThrows . readExpr
 
 writeProc :: [LispVal] -> IOThrowsError LispVal
 writeProc [obj] = writeProc [obj, Port stdout]
-writeProc [obj, Port port] = liftIO $ hPrint port obj >> (return $ Bool True)
+writeProc [obj, Port port] = liftIO $ hPrint port obj >> (return $ Nil)
+
+displayProc :: [LispVal] -> IOThrowsError LispVal
+displayProc [String obj] = liftIO $ putStr obj >> (return $ Nil)
+
+displayLnProc :: [LispVal] -> IOThrowsError LispVal
+displayLnProc [String obj] = liftIO $ putStrLn obj >> (return $ Nil)
 
 readContents :: [LispVal] -> IOThrowsError LispVal
 readContents [String filename] = liftM String $ liftIO $ readFile filename

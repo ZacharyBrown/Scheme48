@@ -27,7 +27,8 @@ readExprList :: String -> ThrowsError [LispVal]
 readExprList = readOrThrow (endBy parseExpr spaces)
     
 parseExpr :: Parser LispVal
-parseExpr = parseAtom 
+parseExpr = parseComment
+        <|> parseAtom 
         <|> parseString
         <|> try parseRatio
         <|> try parseComplex
@@ -48,6 +49,12 @@ parseExpr = parseAtom
             x <- (try parseList <|> parseDottedList)
             _ <- char ')'
             return x
+
+parseComment :: Parser LispVal
+parseComment = do
+    _ <- char ';'
+    comment <- many $ noneOf "\n"
+    return $ Nil
             
 parseString :: Parser LispVal
 parseString = do
