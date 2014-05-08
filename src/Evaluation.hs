@@ -92,6 +92,11 @@ apply (Func params varargs body closure) args =
           bindVarArgs arg env = case arg of
               Just argName -> liftIO $ bindVars env [(argName, List $ remainingArgs)]
               Nothing -> return env
+apply Nil _ = liftThrows $ return Nil
+apply (List []) _ = liftThrows $ return Nil
+apply (List (Nil:xs)) args = apply (List xs) args
+apply badType _ = throwError $ BadSpecialForm "Error applying \'apply\'" badType
+
 
 primitives :: [(String, [LispVal] -> ThrowsError LispVal)]
 primitives = [("+", numericBinop (+)),
