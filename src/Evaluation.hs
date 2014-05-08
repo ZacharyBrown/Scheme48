@@ -315,9 +315,11 @@ writeProc [obj, Port port] = liftIO $ hPrint port obj >> (return $ Nil)
 
 displayProc :: [LispVal] -> IOThrowsError LispVal
 displayProc [String obj] = liftIO $ putStr obj >> (return $ Nil)
+displayProc [Number num] = liftIO $ putStr (show num) >> (return $ Nil)
 
 displayLnProc :: [LispVal] -> IOThrowsError LispVal
 displayLnProc [String obj] = liftIO $ putStrLn obj >> (return $ Nil)
+displayLnProc [Number num] = liftIO $ putStrLn (show num) >> (return $ Nil)
 
 readContents :: [LispVal] -> IOThrowsError LispVal
 readContents [String filename] = liftM String $ liftIO $ readFile filename

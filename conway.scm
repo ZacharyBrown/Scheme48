@@ -6,14 +6,25 @@
 
 ;; Simple board for testing
 ;; All boards made of lists of zeros and ones
-(define simple-board '((0 0 0) 
-	               (1 1 1)
-		       (0 0 0)))
+(define simple-blinker '((0 0 0) 
+	                 (1 1 1)
+		         (0 0 0)))
+
+;; glider board
+(define glider '((0 0 1 0 0 0 0 0)
+          	 (0 0 0 1 0 0 0 0)
+          	 (0 1 1 1 0 0 0 0)
+          	 (0 0 0 0 0 0 0 0)
+          	 (0 0 0 0 0 0 0 0)
+          	 (0 0 0 0 0 0 0 0)
+          	 (0 0 0 0 0 0 0 0)
+          	 (0 0 0 0 0 0 0 0)))
 
 ;; Print the given board
-(define (print-board board) 
-	(cond ((not (null? board))
-	   (map display-ln (map print-row board)))))
+(define (print-board board gen) 
+	((cond ((not (null? board))
+	   (map display-ln (map print-row (reverse board)))))
+	 (display-ln gen)))
 
 ;; Print a single row of the board
 (define (print-row row)
@@ -67,4 +78,24 @@
       (next-row n board 
 	  (cons (next-cell (- width (length output)) n board) output)))) 
 
-(next-row 1 simple-board '())
+;; range of ints from bot to top
+(define (int-range bot top)
+  (if (> bot top)
+      '()
+      (cons bot (int-range (+ bot 1) top))))
+
+;; Calculate the next board state
+(define (next-board cur-board)
+  (map (lambda (n) (next-row n cur-board '()))
+       (int-range 1 (length cur-board))))
+
+
+;; Calculate and print 'reps' generations of a board
+(define (conway board reps)
+  (if (<= reps 0)
+      (display-ln "Finished")
+      ((print-board board reps)
+       (conway (next-board board) (- reps 1)))))
+
+(define prompt "In REPL, call 'conway' with a board and number of generations to run.\nBoards are lists of lists of 0s and 1s.\npre made boards are: \n\t'simple-blinker'\n\t and 'glider'.")
+
