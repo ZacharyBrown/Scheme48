@@ -7,8 +7,8 @@
 ;; Simple board for testing
 ;; All boards made of lists of zeros and ones
 (define simple-board '((0 0 0) 
-	               (0 1 0)
-		       (1 0 1)))
+	               (1 1 1)
+		       (0 0 0)))
 
 ;; Print the given board
 (define (print-board board) 
@@ -49,5 +49,22 @@
      (cell (+ x 1) y board)
      (cell (+ x 1) (+ y 1) board)))
      
-;;
+;; Calculate the next state of a cell 
+;; (This implements the rules of 'Life' Live on 2,3: Born on 3)
+(define (next-cell x y board)
+  (define current (cell x y board))
+  (define n-sum (neighbor-sum x y board))
+  (cond ((and (= current 1) (or (< n-sum 2) (> n-sum 3))) 0)
+	((and (= current 0) (= n-sum 3)) 1)
+	(else current)))
 
+;; Calculate the next state of row n
+;; To calculate a full row, call with output '()
+(define (next-row n board output)
+  (define width (length (car board)))
+  (if (= (length output) width)
+      output
+      (next-row n board 
+	  (cons (next-cell (- width (length output)) n board) output)))) 
+
+(next-row 1 simple-board '())
